@@ -242,11 +242,8 @@ pub fn connect(
 
     let listen_addr = &format!("127.0.0.1:{}", LISTEN_PORT);
     let mut listener = TcpListener::bind(listen_addr.parse().unwrap()).unwrap();
-    // let listener = TcpListener::bind(listen_addr).unwrap();
     let mut buf = [0; MAX_DATAGRAM_SIZE];
-    // TODO unnecessary vector but i don't know how to make it with a option
-    let mut streams: Vec<TcpStream> = vec![];
-    let mut connected = false;
+    let mut tcp_stream: Option<TcpStream> = None;
 
     loop {
         if !conn.is_in_early_data() || app_proto_selected {
@@ -317,13 +314,13 @@ pub fn connect(
                     poll.registry()
                     .register(&mut stream, mio::Token(3), mio::Interest::READABLE)
                     .unwrap();
-                    streams.push(stream);
+                    tcp_stream = Some(stream);
                 },
 
                 mio::Token(3) => {
                     info!("receiving tcp packet");
                     let mut buf_tcp = [0; MAX_DATAGRAM_SIZE];
-                    let n = streams.first().unwrap().read(&mut buf_tcp[..]).unwrap();
+                    let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
                     let mut min = n;
                     if conn.dgram_max_writable_len().unwrap() < min {
@@ -434,8 +431,10 @@ pub fn connect(
 
                 app_proto_selected = true;
             } else if alpns::SIDUCK.contains(&app_proto) {
-                info!("app proto is siduck");
-                siduck_conn = Some(SiDuckConn::new());
+                info!("listening on {}", listen_addr);
+                poll.registry()
+                .register(&mut listener, mio::Token(2), mio::Interest::READABLE)
+                .unwrap();
 
                 app_proto_selected = true;
             }
@@ -511,56 +510,6 @@ pub fn connect(
                     );
                 }
             }
-        }
-
-        // If we have a siduck connection, first issue the quacks then
-        // process received data.
-        if let Some(_si_conn) = siduck_conn.as_mut() {
-            // if streams.len() == 0 {
-            if !connected {
-                info!("listening on {}", listen_addr);
-                poll.registry()
-                .register(&mut listener, mio::Token(2), mio::Interest::READABLE)
-                .unwrap();
-                connected = true;
-                // let (mut stream, from) = listener.accept().unwrap();
-                // // streams.push(stream);
-                // connected = true;
-                // info!("connected from {}", from);
-                // poll.registry()
-                // .register(&mut mio::net::TcpStream::from_std(stream), mio::Token(2), mio::Interest::READABLE)
-                // .unwrap();
-            }
-            //else {
-            //     // used to be
-            //     // si_conn.tcp_to_quic(&mut conn, &mut stream.unwrap());
-
-            //     // do_rtmp_handshake(stream);
-
-            //     info!("receiving tcp packet");
-            //     let mut buf_tcp = [0; MAX_DATAGRAM_SIZE];
-            //     let n = streams.first().unwrap().read(&mut buf_tcp[..]).unwrap();
-
-            //     let mut min = n;
-            //     if conn.dgram_max_writable_len().unwrap() < min {
-            //         min = conn.dgram_max_writable_len().unwrap();
-            //     }
-
-            //     info!("sending QUIC DATAGRAM with size {} ({})", min, n);
-
-            //     match conn.dgram_send(&buf_tcp[..min]) {
-            //         Ok(v) => {
-            //             info!("QUIC DATAGRAM sent");
-            //             v
-            //         },
-
-            //         Err(e) => {
-            //             error!("failed to send dgram {:?}", e);
-
-            //             break;
-            //         },
-            //     }
-            // }
         }
 
         // Handle path events.
