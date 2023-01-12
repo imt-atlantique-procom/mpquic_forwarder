@@ -47,8 +47,8 @@ use quiche_apps::common::*;
 
 use quiche_apps::sendto::*;
 
-const MAX_DATAGRAM_SIZE: usize = 65507;
-const MAX_BUF_SIZE: usize = MAX_DATAGRAM_SIZE;
+const MAX_BUF_SIZE: usize = 65507;
+const MAX_DATAGRAM_SIZE: usize = 1350;
 
 fn main() {
     let mut buf = [0; MAX_BUF_SIZE];

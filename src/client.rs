@@ -27,6 +27,7 @@
 use crate::args::*;
 use crate::common::*;
 
+use std::cmp;
 use std::net::ToSocketAddrs;
 
 use std::io::Read;
@@ -40,8 +41,9 @@ use mio::net::TcpListener;
 use mio::net::TcpStream;
 use ring::rand::*;
 
-const MAX_DATAGRAM_SIZE: usize = 65507;
-// TODO defined multiple times
+const MAX_BUF_SIZE: usize = 65507;
+const MAX_DATAGRAM_SIZE: usize = 1350;
+
 const LISTEN_PORT: &str = "1111";
 // const SEND_PORT: &str = "2222";
 
@@ -240,10 +242,12 @@ pub fn connect(
     let mut new_path_probed = false;
 
 
+    let mut buf = [0; MAX_BUF_SIZE];
+
     let listen_addr = &format!("127.0.0.1:{}", LISTEN_PORT);
     let mut listener = TcpListener::bind(listen_addr.parse().unwrap()).unwrap();
-    let mut buf = [0; MAX_DATAGRAM_SIZE];
     let mut tcp_stream: Option<TcpStream> = None;
+    let mut buf_tcp = [0; MAX_BUF_SIZE];
 
     loop {
         if !conn.is_in_early_data() || app_proto_selected {
@@ -318,21 +322,17 @@ pub fn connect(
                 },
 
                 mio::Token(3) => {
+                    // TODO aca podria hacer un loop read como hace el token 0
                     info!("receiving tcp packet");
-                    let mut buf_tcp = [0; MAX_DATAGRAM_SIZE];
                     let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
-                    let mut min = n;
-                    if conn.dgram_max_writable_len().unwrap() < min {
-                        min = conn.dgram_max_writable_len().unwrap();
-                    }
+                    let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
                     info!("sending QUIC DATAGRAM with size {} ({})", min, n);
 
-                    // match conn.dgram_send(&buf_tcp[..min-1]) {
                     // TODO seguir aca, ver porque esto si quiero mandar todo no manda nada
-                    match conn.dgram_send(&buf_tcp[..1000]) {
-                    // match conn.dgram_send("quack".as_bytes()) {
+                    match conn.dgram_send(&buf_tcp[..min]) {
+                    // match conn.dgram_send(&buf_tcp[..1000]) {
                         Ok(v) => v,
 
                         Err(e) => {
