@@ -39,6 +39,7 @@ use std::rc::Rc;
 
 use std::cell::RefCell;
 
+use std::net::TcpStream;
 use ring::rand::*;
 
 use quiche_apps::args::*;
@@ -49,6 +50,8 @@ use quiche_apps::sendto::*;
 
 const MAX_BUF_SIZE: usize = 65507;
 const MAX_DATAGRAM_SIZE: usize = 1350;
+
+const SEND_PORT: &str = "3333";
 
 fn main() {
     let mut buf = [0; MAX_BUF_SIZE];
@@ -167,6 +170,9 @@ fn main() {
     let mut continue_write = false;
 
     let local_addr = socket.local_addr().unwrap();
+
+    let tcp_addr = &format!("127.0.0.1:{}", SEND_PORT);
+    let mut tcp_stream: Option<TcpStream> = None;
 
     loop {
         // Find the shorter timeout from all the active connections.
@@ -503,7 +509,12 @@ fn main() {
                 let conn = &mut client.conn;
                 let si_conn = client.siduck_conn.as_mut().unwrap();
 
-                if si_conn.quic_to_tcp(conn, &mut buf).is_err() {
+                if let None = tcp_stream {
+                    tcp_stream = Some(TcpStream::connect(tcp_addr).unwrap());
+                    info!("Connected to {}", tcp_addr);
+                }
+
+                if si_conn.quic_to_tcp(conn, &mut buf, tcp_stream.as_mut().unwrap()).is_err() {
                     continue 'read;
                 }
             }

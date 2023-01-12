@@ -52,9 +52,6 @@ use quiche::ConnectionId;
 use quiche::h3::NameValue;
 use quiche::h3::Priority;
 
-const MAX_BUF_SIZE: usize = 65507;
-const SEND_PORT: &str = "3333";
-
 pub fn stdout_sink(out: String) {
     print!("{}", out);
 }
@@ -354,23 +351,14 @@ impl SiDuckConn {
     }
 
     pub fn quic_to_tcp(
-        &mut self, conn: &mut quiche::Connection, buf: &mut [u8]
+        &mut self, conn: &mut quiche::Connection, buf: &mut [u8], tcp_stream: &mut TcpStream
     ) -> quiche::h3::Result<()> {
-        let tcp_addr = &format!("127.0.0.1:{}", SEND_PORT);
-        // TODO unnecessary vector but i don't know how to make it with a option
-        let mut streams: Vec<TcpStream> = vec![];
-
         loop {
             match conn.dgram_recv(buf) {
                 Ok(len) => {
                     info!("Received DATAGRAM with len {}", len);
 
-                    if streams.len() == 0 {
-                        streams.push(TcpStream::connect(tcp_addr).unwrap());
-                        info!("Connected to {}", tcp_addr);
-                    }
-
-                    match streams.first().unwrap().write(&buf[..len]) {
+                    match tcp_stream.write(&buf[..len]) {
                         Ok(_) => (),
 
                         Err(e) => {
