@@ -42,6 +42,7 @@ use mio::net::TcpStream;
 use ring::rand::*;
 
 const MAX_BUF_SIZE: usize = 65507;
+// TODO it fails if we try to make it bigger
 const MAX_DATAGRAM_SIZE: usize = 1350;
 
 const LISTEN_PORT: &str = "1111";
@@ -322,7 +323,7 @@ pub fn connect(
                 },
 
                 mio::Token(3) => {
-                    // TODO aca podria hacer un loop read como hace el token 0
+                    // TODO read loop
                     info!("receiving tcp packet");
                     let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
@@ -330,9 +331,7 @@ pub fn connect(
 
                     info!("sending QUIC DATAGRAM with size {} ({})", min, n);
 
-                    // TODO seguir aca, ver porque esto si quiero mandar todo no manda nada
                     match conn.dgram_send(&buf_tcp[..min]) {
-                    // match conn.dgram_send(&buf_tcp[..1000]) {
                         Ok(v) => v,
 
                         Err(e) => {
