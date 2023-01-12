@@ -353,35 +353,6 @@ impl SiDuckConn {
         Self {}
     }
 
-    pub fn tcp_to_quic(&mut self, conn: &mut quiche::Connection, stream: &mut TcpStream) {
-        trace!("starting forwarding");
-
-        let mut buf = [0; MAX_BUF_SIZE];
-
-        // do_rtmp_handshake(stream);
-
-        loop {
-            let n = stream.read(&mut buf[..]).unwrap();
-
-            let mut min = n;
-            if conn.dgram_max_writable_len().unwrap() < min {
-                min = conn.dgram_max_writable_len().unwrap();
-            }
-        
-            info!("sending QUIC DATAGRAM with size {} ({})", min, n);
-
-            match conn.dgram_send(&buf[..min]) {
-                Ok(v) => v,
-
-                Err(e) => {
-                    error!("failed to send dgram {:?}", e);
-
-                    break;
-                },
-            }
-        }
-    }
-
     pub fn quic_to_tcp(
         &mut self, conn: &mut quiche::Connection, buf: &mut [u8]
     ) -> quiche::h3::Result<()> {
