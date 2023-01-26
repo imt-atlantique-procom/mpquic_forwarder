@@ -327,10 +327,10 @@ pub fn connect(
                     let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
                     if n > 0 {
-                        info!("receiving tcp packet");
+                        info!("Received tcp packet with size {}", n);
                         let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
-                        info!("sending QUIC DATAGRAM with size {} ({})", min, n);
+                        info!("Sending QUIC DATAGRAM with size {} ({})", min, n);
 
                         match conn.dgram_send(&buf_tcp[..min]) {
                             Ok(v) => v,
@@ -341,8 +341,6 @@ pub fn connect(
                                 break;
                             },
                         }
-
-                        info!("QUIC DATAGRAM sent");
                     }
                 },
 
@@ -503,7 +501,7 @@ pub fn connect(
                         )));
                     }
 
-                    info!(
+                    trace!(
                         "{} -> {}: written {}",
                         local_addr,
                         send_info.to,
