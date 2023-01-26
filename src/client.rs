@@ -324,24 +324,26 @@ pub fn connect(
 
                 mio::Token(3) => {
                     // TODO read loop
-                    info!("receiving tcp packet");
                     let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
-                    let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
+                    if n > 0 {
+                        info!("receiving tcp packet");
+                        let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
-                    info!("sending QUIC DATAGRAM with size {} ({})", min, n);
+                        info!("sending QUIC DATAGRAM with size {} ({})", min, n);
 
-                    match conn.dgram_send(&buf_tcp[..min]) {
-                        Ok(v) => v,
+                        match conn.dgram_send(&buf_tcp[..min]) {
+                            Ok(v) => v,
 
-                        Err(e) => {
-                            error!("failed to send dgram {:?}", e);
+                            Err(e) => {
+                                error!("failed to send dgram {:?}", e);
 
-                            break;
-                        },
+                                break;
+                            },
+                        }
+
+                        info!("QUIC DATAGRAM sent");
                     }
-
-                    info!("QUIC DATAGRAM sent");
                 },
 
                 _ => unreachable!(),
