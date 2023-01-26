@@ -16,4 +16,5 @@ BUFFER_SIZE = 2048
 
 while True:
     data = clientsocket.recv(BUFFER_SIZE)
-    print("received message: %s" % data)
+    if len(data) > 0:
+        print("received message: %s" % data)
