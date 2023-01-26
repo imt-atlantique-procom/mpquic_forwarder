@@ -39,8 +39,8 @@ use std::rc::Rc;
 
 use std::cell::RefCell;
 
-use std::net::TcpStream;
 use ring::rand::*;
+use std::net::TcpStream;
 
 use quiche_apps::args::*;
 
@@ -72,8 +72,7 @@ fn main() {
     let mut events = mio::Events::with_capacity(1024);
 
     // Create the UDP listening socket, and register it with the event loop.
-    let mut socket =
-        mio::net::UdpSocket::bind(args.listen.parse().unwrap()).unwrap();
+    let mut socket = mio::net::UdpSocket::bind(args.listen.parse().unwrap()).unwrap();
 
     // Set SO_TXTIME socket option on the listening UDP socket for pacing
     // outgoing packets.
@@ -81,7 +80,7 @@ fn main() {
         Ok(_) => {
             pacing = true;
             debug!("successfully set SO_TXTIME socket option");
-        },
+        }
         Err(e) => debug!("setsockopt failed {:?}", e),
     };
 
@@ -158,8 +157,7 @@ fn main() {
     }
 
     let rng = SystemRandom::new();
-    let conn_id_seed =
-        ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &rng).unwrap();
+    let conn_id_seed = ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &rng).unwrap();
 
     let mut next_client_id = 0;
     let mut clients_ids = ClientIdMap::new();
@@ -212,7 +210,7 @@ fn main() {
                     }
 
                     panic!("recv() failed: {:?}", e);
-                },
+                }
             };
 
             trace!("got {} bytes", len);
@@ -231,16 +229,13 @@ fn main() {
             pkt_count += 1;
 
             // Parse the QUIC packet's header.
-            let hdr = match quiche::Header::from_slice(
-                pkt_buf,
-                quiche::MAX_CONN_ID_LEN,
-            ) {
+            let hdr = match quiche::Header::from_slice(pkt_buf, quiche::MAX_CONN_ID_LEN) {
                 Ok(v) => v,
 
                 Err(e) => {
                     error!("Parsing packet header failed: {:?}", e);
                     continue 'read;
-                },
+                }
             };
 
             trace!("got packet {:?}", hdr);
@@ -251,8 +246,8 @@ fn main() {
 
             // Lookup a connection based on the packet's connection ID. If there
             // is no connection matching, create a new one.
-            let client = if !clients_ids.contains_key(&hdr.dcid) &&
-                !clients_ids.contains_key(&conn_id)
+            let client = if !clients_ids.contains_key(&hdr.dcid)
+                && !clients_ids.contains_key(&conn_id)
             {
                 if hdr.ty != quiche::Type::Initial {
                     error!("Packet is not Initial");
@@ -262,9 +257,7 @@ fn main() {
                 if !quiche::version_is_supported(hdr.version) {
                     warn!("Doing version negotiation");
 
-                    let len =
-                        quiche::negotiate_version(&hdr.scid, &hdr.dcid, &mut out)
-                            .unwrap();
+                    let len = quiche::negotiate_version(&hdr.scid, &hdr.dcid, &mut out).unwrap();
 
                     let out = &out[..len];
 
@@ -342,14 +335,8 @@ fn main() {
                 debug!("New connection: dcid={:?} scid={:?}", hdr.dcid, scid);
 
                 #[allow(unused_mut)]
-                let mut conn = quiche::accept(
-                    &scid,
-                    odcid.as_ref(),
-                    local_addr,
-                    from,
-                    &mut config,
-                )
-                .unwrap();
+                let mut conn =
+                    quiche::accept(&scid, odcid.as_ref(), local_addr, from, &mut config).unwrap();
 
                 if let Some(keylog) = &mut keylog {
                     if let Ok(keylog) = keylog.try_clone() {
@@ -415,16 +402,15 @@ fn main() {
                 Err(e) => {
                     error!("{} recv failed: {:?}", client.conn.trace_id(), e);
                     continue 'read;
-                },
+                }
             };
 
             trace!("{} processed {} bytes", client.conn.trace_id(), read);
 
             // Create a new application protocol session as soon as the QUIC
             // connection is established.
-            if !client.app_proto_selected &&
-                (client.conn.is_in_early_data() ||
-                    client.conn.is_established())
+            if !client.app_proto_selected
+                && (client.conn.is_in_early_data() || client.conn.is_established())
             {
                 // At this stage the ALPN negotiation succeeded and selected a
                 // single application protocol name. We'll use this to construct
@@ -463,7 +449,7 @@ fn main() {
                         Err(e) => {
                             trace!("{} {}", client.conn.trace_id(), e);
                             None
-                        },
+                        }
                     };
 
                     client.app_proto_selected = true;
@@ -475,8 +461,7 @@ fn main() {
                 }
 
                 // Update max_datagram_size after connection established.
-                client.max_datagram_size =
-                    client.conn.max_send_udp_payload_size();
+                client.max_datagram_size = client.conn.max_send_udp_payload_size();
             }
 
             if client.http_conn.is_some() {
@@ -514,7 +499,10 @@ fn main() {
                     info!("Connected to {}", tcp_addr);
                 }
 
-                if si_conn.quic_to_tcp(conn, &mut buf, tcp_stream.as_mut().unwrap()).is_err() {
+                if si_conn
+                    .quic_to_tcp(conn, &mut buf, tcp_stream.as_mut().unwrap())
+                    .is_err()
+                {
                     continue 'read;
                 }
             }
@@ -548,42 +536,37 @@ fn main() {
         continue_write = false;
         for client in clients.values_mut() {
             // Reduce max_send_burst by 25% if loss is increasing more than 0.1%.
-            let loss_rate =
-                client.conn.stats().lost as f64 / client.conn.stats().sent as f64;
+            let loss_rate = client.conn.stats().lost as f64 / client.conn.stats().sent as f64;
             if loss_rate > client.loss_rate + 0.001 {
                 client.max_send_burst = client.max_send_burst / 4 * 3;
                 // Minimun bound of 10xMSS.
-                client.max_send_burst =
-                    client.max_send_burst.max(client.max_datagram_size * 10);
+                client.max_send_burst = client.max_send_burst.max(client.max_datagram_size * 10);
                 client.loss_rate = loss_rate;
             }
 
-            let max_send_burst =
-                client.conn.send_quantum().min(client.max_send_burst) /
-                    client.max_datagram_size *
-                    client.max_datagram_size;
+            let max_send_burst = client.conn.send_quantum().min(client.max_send_burst)
+                / client.max_datagram_size
+                * client.max_datagram_size;
             let mut total_write = 0;
             let mut dst_info = None;
 
             while total_write < max_send_burst {
-                let (write, send_info) = match client
-                    .conn
-                    .send(&mut out[total_write..max_send_burst])
-                {
-                    Ok(v) => v,
+                let (write, send_info) =
+                    match client.conn.send(&mut out[total_write..max_send_burst]) {
+                        Ok(v) => v,
 
-                    Err(quiche::Error::Done) => {
-                        trace!("{} done writing", client.conn.trace_id());
-                        break;
-                    },
+                        Err(quiche::Error::Done) => {
+                            trace!("{} done writing", client.conn.trace_id());
+                            break;
+                        }
 
-                    Err(e) => {
-                        error!("{} send failed: {:?}", client.conn.trace_id(), e);
+                        Err(e) => {
+                            error!("{} send failed: {:?}", client.conn.trace_id(), e);
 
-                        client.conn.close(false, 0x1, b"fail").ok();
-                        break;
-                    },
-                };
+                            client.conn.close(false, 0x1, b"fail").ok();
+                            break;
+                        }
+                    };
 
                 total_write += write;
 
@@ -675,9 +658,7 @@ fn mint_token(hdr: &quiche::Header, src: &net::SocketAddr) -> Vec<u8> {
 ///
 /// Note that this function is only an example and doesn't do any cryptographic
 /// authenticate of the token. *It should not be used in production system*.
-fn validate_token<'a>(
-    src: &net::SocketAddr, token: &'a [u8],
-) -> Option<quiche::ConnectionId<'a>> {
+fn validate_token<'a>(src: &net::SocketAddr, token: &'a [u8]) -> Option<quiche::ConnectionId<'a>> {
     if token.len() < 6 {
         return None;
     }
@@ -716,7 +697,7 @@ fn handle_path_events(client: &mut Client) {
                     .conn
                     .probe_path(local_addr, peer_addr)
                     .expect("cannot probe");
-            },
+            }
 
             quiche::PathEvent::Validated(local_addr, peer_addr) => {
                 info!(
@@ -725,7 +706,7 @@ fn handle_path_events(client: &mut Client) {
                     local_addr,
                     peer_addr
                 );
-            },
+            }
 
             quiche::PathEvent::FailedValidation(local_addr, peer_addr) => {
                 info!(
@@ -734,7 +715,7 @@ fn handle_path_events(client: &mut Client) {
                     local_addr,
                     peer_addr
                 );
-            },
+            }
 
             quiche::PathEvent::Closed(local_addr, peer_addr) => {
                 info!(
@@ -743,7 +724,7 @@ fn handle_path_events(client: &mut Client) {
                     local_addr,
                     peer_addr
                 );
-            },
+            }
 
             quiche::PathEvent::ReusedSourceConnectionId(cid_seq, old, new) => {
                 info!(
@@ -753,7 +734,7 @@ fn handle_path_events(client: &mut Client) {
                     old,
                     new
                 );
-            },
+            }
 
             quiche::PathEvent::PeerMigrated(local_addr, peer_addr) => {
                 info!(
@@ -762,7 +743,7 @@ fn handle_path_events(client: &mut Client) {
                     local_addr,
                     peer_addr
                 );
-            },
+            }
         }
     }
 }
