@@ -40,7 +40,7 @@ fn main() {
     let conn_args = CommonArgs::with_docopt(&docopt);
     let args = ClientArgs::with_docopt(&docopt);
 
-    match connect(args, conn_args, stdout_sink) {
+    match connect(args, conn_args) {
         Err(ClientError::HandshakeFail) => std::process::exit(-1),
 
         Err(ClientError::HttpFail) => std::process::exit(-2),

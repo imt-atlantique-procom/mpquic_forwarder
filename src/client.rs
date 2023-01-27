@@ -32,17 +32,12 @@ use std::net::ToSocketAddrs;
 
 use std::io::Read;
 
-use std::rc::Rc;
-
-use std::cell::RefCell;
-
 use mio::net::TcpListener;
 use mio::net::TcpStream;
 use ring::rand::*;
 
-const MAX_BUF_SIZE: usize = 65507;
-// TODO it fails if we try to make it bigger
-const MAX_DATAGRAM_SIZE: usize = 1350;
+const MAX_BUF_SIZE: usize = 65536;
+const MAX_DATAGRAM_SIZE: usize = 65536;
 
 const LISTEN_PORT: &str = "1111";
 // const SEND_PORT: &str = "2222";
@@ -54,14 +49,8 @@ pub enum ClientError {
     Other(String),
 }
 
-pub fn connect(
-    args: ClientArgs,
-    conn_args: CommonArgs,
-    output_sink: impl FnMut(String) + 'static,
-) -> Result<(), ClientError> {
-    let mut out = [0; 1500];
-
-    let output_sink = Rc::new(RefCell::new(output_sink)) as Rc<RefCell<dyn FnMut(_)>>;
+pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientError> {
+    let mut out = [0; MAX_DATAGRAM_SIZE];
 
     // Setup the event loop.
     let mut poll = mio::Poll::new().unwrap();
@@ -105,11 +94,14 @@ pub fn connect(
     // };
 
     // Create the configuration for the QUIC connection.
-    let mut config = quiche::Config::new(args.version).unwrap();
+    let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
 
-    config.verify_peer(!args.no_verify);
+    config.verify_peer(false);
 
-    config.set_application_protos(&conn_args.alpns).unwrap();
+    config
+        .set_application_protos(&alpns::SIDUCK.to_vec())
+        .unwrap();
+    config.enable_dgram(true, 1000, 1000);
 
     config.set_max_idle_timeout(conn_args.idle_timeout);
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
@@ -155,13 +147,6 @@ pub fn connect(
     if conn_args.disable_hystart {
         config.enable_hystart(false);
     }
-
-    if conn_args.dgrams_enabled {
-        config.enable_dgram(true, 1000, 1000);
-    }
-
-    let mut http_conn: Option<Box<dyn HttpConn>> = None;
-    let mut siduck_conn: Option<SiDuckConn> = None;
 
     let mut app_proto_selected = false;
 
@@ -326,7 +311,10 @@ pub fn connect(
                         info!("Received tcp packet with size {}", n);
                         let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
-                        info!("Sending QUIC DATAGRAM with size {} ({})", min, n);
+                        info!(
+                            "Sending QUIC DATAGRAM with size {} (original size {})",
+                            min, n
+                        );
 
                         match conn.dgram_send(&buf_tcp[..min]) {
                             Ok(v) => v,
@@ -375,54 +363,10 @@ pub fn connect(
         // Create a new application protocol session once the QUIC connection is
         // established.
         if (conn.is_established() || conn.is_in_early_data()) && !app_proto_selected {
-            // At this stage the ALPN negotiation succeeded and selected a
-            // single application protocol name. We'll use this to construct
-            // the correct type of HttpConn but `application_proto()`
-            // returns a slice, so we have to convert it to a str in order
-            // to compare to our lists of protocols. We `unwrap()` because
-            // we need the value and if something fails at this stage, there
-            // is not much anyone can do to recover.
-
             let app_proto = conn.application_proto();
 
-            if alpns::HTTP_09.contains(&app_proto) {
-                http_conn = Some(Http09Conn::with_urls(
-                    &args.urls,
-                    args.reqs_cardinal,
-                    Rc::clone(&output_sink),
-                ));
-
-                app_proto_selected = true;
-            } else if alpns::HTTP_3.contains(&app_proto) {
-                let dgram_sender = if conn_args.dgrams_enabled {
-                    Some(Http3DgramSender::new(
-                        conn_args.dgram_count,
-                        conn_args.dgram_data.clone(),
-                        0,
-                    ))
-                } else {
-                    None
-                };
-
-                http_conn = Some(Http3Conn::with_urls(
-                    &mut conn,
-                    &args.urls,
-                    args.reqs_cardinal,
-                    &args.req_headers,
-                    &args.body,
-                    &args.method,
-                    args.send_priority_update,
-                    conn_args.max_field_section_size,
-                    conn_args.qpack_max_table_capacity,
-                    conn_args.qpack_blocked_streams,
-                    args.dump_json,
-                    dgram_sender,
-                    Rc::clone(&output_sink),
-                ));
-
-                app_proto_selected = true;
-            } else if alpns::SIDUCK.contains(&app_proto) {
-                info!("listening on {}", listen_addr);
+            if alpns::SIDUCK.contains(&app_proto) {
+                info!("Listening TCP on {}", listen_addr);
                 poll.registry()
                     .register(&mut listener, mio::Token(2), mio::Interest::READABLE)
                     .unwrap();
@@ -430,13 +374,6 @@ pub fn connect(
                 app_proto_selected = true;
             }
         }
-
-        // If we have an HTTP connection, first issue the requests then
-        // process received data.
-        // if let Some(h_conn) = http_conn.as_mut() {
-        //     h_conn.send_requests(&mut conn, &args.dump_response_path);
-        //     h_conn.handle_responses(&mut conn, &mut buf, &app_data_start);
-        // }
 
         // Generate outgoing QUIC packets and send them on the UDP socket, until
         // quiche reports that there are no more packets to be sent.
@@ -479,7 +416,7 @@ pub fn connect(
                         )));
                     }
 
-                    trace!("{} -> {}: written {}", local_addr, send_info.to, write);
+                    info!("{} -> {}: written {}", local_addr, send_info.to, write);
                 }
             }
         }
@@ -560,12 +497,6 @@ pub fn connect(
             // if let Some(session_file) = &args.session_file {
             //     if let Some(session) = conn.session() {
             //         std::fs::write(session_file, session).ok();
-            //     }
-            // }
-
-            // if let Some(h_conn) = http_conn {
-            //     if h_conn.report_incomplete(&app_data_start) {
-            //         return Err(ClientError::HttpFail);
             //     }
             // }
 

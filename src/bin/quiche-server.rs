@@ -48,8 +48,8 @@ use quiche_apps::common::*;
 
 use quiche_apps::sendto::*;
 
-const MAX_BUF_SIZE: usize = 65507;
-const MAX_DATAGRAM_SIZE: usize = 1350;
+const MAX_BUF_SIZE: usize = 65536;
+const MAX_DATAGRAM_SIZE: usize = 65536;
 
 const SEND_PORT: &str = "3333";
 
