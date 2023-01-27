@@ -225,6 +225,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
 
     let mut buf = [0; MAX_BUF_SIZE];
 
+    // TCP listener for incoming packets
     let listen_addr = &format!("127.0.0.1:{}", LISTEN_PORT);
     let mut listener = TcpListener::bind(listen_addr.parse().unwrap()).unwrap();
     let mut tcp_stream: Option<TcpStream> = None;
@@ -293,8 +294,9 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 // TODO
                 // mio::Token(1) => let socket = migrate_socket.as_ref().unwrap(),
                 mio::Token(2) => {
+                    // TCP accept
                     let (mut stream, from) = listener.accept().unwrap();
-                    info!("connected from {}", from);
+                    info!("TCP connected from {}", from);
                     poll.registry()
                         .register(&mut stream, mio::Token(3), mio::Interest::READABLE)
                         .unwrap();
@@ -307,6 +309,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
 
                     if n > 0 {
                         info!("Received tcp packet with size {}", n);
+                        // avoid BufferTooShortError
                         let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
                         info!(
@@ -343,17 +346,9 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 error!("connection timed out after {:?}", app_data_start.elapsed(),);
 
                 return Err(ClientError::HandshakeFail);
+            } else {
+                error!("connection timed out after {:?}", app_data_start.elapsed(),);
             }
-
-            // if let Some(h_conn) = http_conn {
-            //     if h_conn.report_incomplete(&app_data_start) {
-            //         return Err(ClientError::HttpFail);
-            //     }
-            // }
-
-            // if let Some(si_conn) = siduck_conn {
-            //     si_conn.report_incomplete(&app_data_start);
-            // }
 
             break;
         }
@@ -370,6 +365,8 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                     .unwrap();
 
                 app_proto_selected = true;
+            } else {
+                error!("App proto is not SIDUCK when it's the only option");
             }
         }
 
@@ -492,10 +489,6 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                     std::fs::write(session_file, session).ok();
                 }
             }
-
-            // if let Some(si_conn) = siduck_conn {
-            //     si_conn.report_incomplete(&app_data_start);
-            // }
 
             break;
         }
