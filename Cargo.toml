@@ -34,6 +34,7 @@ libc = "0.2"
 nix = "0"
 slab = "0.4"
 itertools = "0.10"
+rand = "0.8.3"
 
 [lib]
 crate-type = ["lib"]
