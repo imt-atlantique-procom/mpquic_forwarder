@@ -24,9 +24,9 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use quiche_apps::args::*;
+use quic_forwarder::args::*;
 
-use quiche_apps::client::*;
+use quic_forwarder::client::*;
 
 fn main() {
     env_logger::builder()

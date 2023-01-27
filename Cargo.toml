@@ -1,7 +1,7 @@
 [package]
-name = "quiche_apps"
+name = "quic_forwarder"
 version = "0.1.0"
-authors = ["Lucas Pardue <lucaspardue.24.7@gmail.com>"]
+authors = ["Franco Liberali <franco.liberali@gmail.com>"]
 edition = "2018"
 publish = false
 
@@ -27,9 +27,13 @@ mio = { version = "0.8", features = ["net", "os-poll"] }
 url = "1"
 log = "0.4"
 ring = "0.16"
-quiche = { git = "https://github.com/cloudflare/quiche" }
+# quiche = { path = "../quiche/quiche" }
+# quiche = { git = "https://github.com/cloudflare/quiche" }
+quiche = { git = "https://github.com/qdeconinck/quiche", branch = "multipath"}
 libc = "0.2"
 nix = "0"
+slab = "0.4"
+itertools = "0.10"
 
 [lib]
 crate-type = ["lib"]
