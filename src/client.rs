@@ -81,17 +81,16 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
         .register(&mut socket, mio::Token(0), mio::Interest::READABLE)
         .unwrap();
 
-    // let migrate_socket = if args.perform_migration {
-    //     let mut socket =
-    //         mio::net::UdpSocket::bind(bind_addr.parse().unwrap()).unwrap();
-    //     poll.registry()
-    //         .register(&mut socket, mio::Token(1), mio::Interest::READABLE)
-    //         .unwrap();
+    let migrate_socket = if args.perform_migration {
+        let mut socket = mio::net::UdpSocket::bind(bind_addr.parse().unwrap()).unwrap();
+        poll.registry()
+            .register(&mut socket, mio::Token(1), mio::Interest::READABLE)
+            .unwrap();
 
-    //     Some(socket)
-    // } else {
-    //     None
-    // };
+        Some(socket)
+    } else {
+        None
+    };
 
     // Create the configuration for the QUIC connection.
     let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
@@ -378,9 +377,9 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
         // Generate outgoing QUIC packets and send them on the UDP socket, until
         // quiche reports that there are no more packets to be sent.
         let mut sockets = vec![&socket];
-        // if let Some(migrate_socket) = migrate_socket.as_ref() {
-        //     sockets.push(migrate_socket);
-        // }
+        if let Some(migrate_socket) = migrate_socket.as_ref() {
+            sockets.push(migrate_socket);
+        }
 
         for socket in sockets {
             let local_addr = socket.local_addr().unwrap();
@@ -469,17 +468,12 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
             scid_sent = true;
         }
 
-        // if args.perform_migration &&
-        //     !new_path_probed &&
-        //     scid_sent &&
-        //     conn.available_dcids() > 0
-        // {
-        //     let additional_local_addr =
-        //         migrate_socket.as_ref().unwrap().local_addr().unwrap();
-        //     conn.probe_path(additional_local_addr, peer_addr).unwrap();
+        if args.perform_migration && !new_path_probed && scid_sent && conn.available_dcids() > 0 {
+            let additional_local_addr = migrate_socket.as_ref().unwrap().local_addr().unwrap();
+            conn.probe_path(additional_local_addr, peer_addr).unwrap();
 
-        //     new_path_probed = true;
-        // }
+            new_path_probed = true;
+        }
 
         if conn.is_closed() {
             info!(
@@ -494,11 +488,11 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 return Err(ClientError::HandshakeFail);
             }
 
-            // if let Some(session_file) = &args.session_file {
-            //     if let Some(session) = conn.session() {
-            //         std::fs::write(session_file, session).ok();
-            //     }
-            // }
+            if let Some(session_file) = &args.session_file {
+                if let Some(session) = conn.session() {
+                    std::fs::write(session_file, session).ok();
+                }
+            }
 
             // if let Some(si_conn) = siduck_conn {
             //     si_conn.report_incomplete(&app_data_start);

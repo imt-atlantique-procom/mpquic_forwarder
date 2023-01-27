@@ -26,8 +26,6 @@
 
 use quiche_apps::args::*;
 
-use quiche_apps::common::*;
-
 use quiche_apps::client::*;
 
 fn main() {
