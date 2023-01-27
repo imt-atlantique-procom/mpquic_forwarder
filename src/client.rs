@@ -222,6 +222,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
 
     let mut scid_sent = false;
     let mut new_path_probed = false;
+    let mut migrated = false;
 
     let mut buf = [0; MAX_BUF_SIZE];
 
@@ -355,7 +356,10 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
 
         // Create a new application protocol session once the QUIC connection is
         // established.
-        if (conn.is_established() || conn.is_in_early_data()) && !app_proto_selected {
+        if (conn.is_established() || conn.is_in_early_data())
+            && (!args.perform_migration || migrated)
+            && !app_proto_selected
+        {
             let app_proto = conn.application_proto();
 
             if alpns::SIDUCK.contains(&app_proto) {
@@ -424,6 +428,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 quiche::PathEvent::Validated(local_addr, peer_addr) => {
                     info!("Path ({}, {}) is now validated", local_addr, peer_addr);
                     conn.migrate(local_addr, peer_addr).unwrap();
+                    migrated = true;
                 }
 
                 quiche::PathEvent::FailedValidation(local_addr, peer_addr) => {
