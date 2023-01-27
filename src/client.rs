@@ -40,7 +40,6 @@ const MAX_BUF_SIZE: usize = 65536;
 const MAX_DATAGRAM_SIZE: usize = 65536;
 
 const LISTEN_PORT: &str = "1111";
-// const SEND_PORT: &str = "2222";
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -95,7 +94,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     // Create the configuration for the QUIC connection.
     let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
 
-    config.verify_peer(false);
+    config.verify_peer(!args.no_verify);
 
     config
         .set_application_protos(&alpns::SIDUCK.to_vec())
