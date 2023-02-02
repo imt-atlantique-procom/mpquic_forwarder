@@ -265,6 +265,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
             poll.poll(&mut events, conn.timeout()).unwrap();
         }
 
+        // TODO check this
         // If the event loop reported no events, it means that the timeout
         // has expired, so handle it without attempting to read packets. We
         // will then proceed with the send loop.
@@ -334,21 +335,42 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 tcp_stream = Some(stream);
             } else if token == tcp_receive_token {
                 // TCP packet received
-                // TODO read loop
+                // TODO read loop?
                 let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
 
                 if n > 0 {
                     info!("Received tcp packet with size {}", n);
+
                     // avoid BufferTooShortError
-                    let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
+                    // TODO implement method to send larger datagrams (with len prepended)
+                    // let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
-                    info!(
-                        "Sending QUIC DATAGRAM with size {} (original size {})",
-                        min, n
-                    );
+                    // info!(
+                    //     "Sending QUIC DATAGRAM with size {} (original size {})",
+                    //     min, n
+                    // );
 
-                    match conn.dgram_send(&buf_tcp[..min]) {
-                        Ok(v) => v,
+                    // match conn.dgram_send(&buf_tcp[..min]) {
+                    //     Ok(v) => v,
+
+                    //     Err(e) => {
+                    //         error!("failed to send dgram {:?}", e);
+
+                    //         break;
+                    //     }
+                    // }
+
+                    // Avoid creating more than one quic packet
+                    // TODO implement method to send larger packets (with len prepended)
+                    let min = cmp::min(n, conn.max_send_udp_payload_size());
+                    let min = cmp::min(min, 16337); // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
+                    match conn.stream_send(0, &buf_tcp[..min], false) {
+                        Ok(sent) => {
+                            info!(
+                                "Sent QUIC stream with size {} (original size {}, {})",
+                                sent, min, n
+                            );
+                        }
 
                         Err(e) => {
                             error!("failed to send dgram {:?}", e);
