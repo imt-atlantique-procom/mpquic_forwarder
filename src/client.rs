@@ -29,6 +29,7 @@ use crate::common::*;
 
 use std::cmp;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::net::ToSocketAddrs;
 
 use std::io::Read;
@@ -136,7 +137,10 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     config.set_initial_max_streams_bidi(conn_args.max_streams_bidi);
     config.set_initial_max_streams_uni(conn_args.max_streams_uni);
     config.set_disable_active_migration(!conn_args.enable_active_migration);
-    config.set_active_connection_id_limit(conn_args.max_active_cids);
+    config.set_active_connection_id_limit(std::cmp::max(
+        conn_args.max_active_cids,
+        sockets_amount.try_into().unwrap(),
+    ));
     config.set_multipath(conn_args.multipath);
 
     config.set_max_connection_window(conn_args.max_window);
