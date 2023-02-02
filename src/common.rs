@@ -362,34 +362,29 @@ impl SiDuckConn {
         buf: &mut [u8],
         tcp_stream: &mut TcpStream,
     ) -> quiche::h3::Result<()> {
-        loop {
-            match conn.dgram_recv(buf) {
-                Ok(len) => {
-                    info!("Received DATAGRAM with len {}", len);
+        match conn.dgram_recv(buf) {
+            Ok(len) => {
+                info!("Received DATAGRAM with len {}", len);
 
-                    match tcp_stream.write(&buf[..len]) {
-                        Ok(_) => (),
+                match tcp_stream.write(&buf[..len]) {
+                    Ok(_) => (),
 
-                        Err(e) => {
-                            error!("failure sending TCP failure {:?}", e);
-
-                            // TODO no se como hacer aca para que ande
-                            // return Err(From::from(e));
-                            break;
-                        }
+                    Err(e) => {
+                        error!("failure sending TCP failure {:?}", e);
+                        // TODO return error
+                        // return Err(From::from("asd"));
                     }
                 }
+            }
 
-                Err(quiche::Error::Done) => break,
+            Err(quiche::Error::Done) => (),
 
-                Err(e) => {
-                    error!("failure receiving DATAGRAM failure {:?}", e);
+            Err(e) => {
+                error!("failure receiving DATAGRAM failure {:?}", e);
 
-                    return Err(From::from(e));
-                }
+                return Err(From::from(e));
             }
         }
-
         Ok(())
     }
 }
