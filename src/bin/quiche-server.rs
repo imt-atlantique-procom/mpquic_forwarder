@@ -35,10 +35,6 @@ use std::io::prelude::*;
 
 use std::collections::HashMap;
 
-use std::rc::Rc;
-
-use std::cell::RefCell;
-
 use ring::rand::*;
 use std::net::TcpStream;
 
@@ -422,43 +418,13 @@ fn main() {
                 // is not much anyone can do to recover.
                 let app_proto = client.conn.application_proto();
 
-                if alpns::HTTP_09.contains(&app_proto) {
-                    client.http_conn = Some(Box::new(Http09Conn::default()));
-
-                    client.app_proto_selected = true;
-                } else if alpns::HTTP_3.contains(&app_proto) {
-                    let dgram_sender = if conn_args.dgrams_enabled {
-                        Some(Http3DgramSender::new(
-                            conn_args.dgram_count,
-                            conn_args.dgram_data.clone(),
-                            1,
-                        ))
-                    } else {
-                        None
-                    };
-
-                    client.http_conn = match Http3Conn::with_conn(
-                        &mut client.conn,
-                        conn_args.max_field_section_size,
-                        conn_args.qpack_max_table_capacity,
-                        conn_args.qpack_blocked_streams,
-                        dgram_sender,
-                        Rc::new(RefCell::new(stdout_sink)),
-                    ) {
-                        Ok(v) => Some(v),
-
-                        Err(e) => {
-                            trace!("{} {}", client.conn.trace_id(), e);
-                            None
-                        }
-                    };
-
-                    client.app_proto_selected = true;
-                } else if alpns::SIDUCK.contains(&app_proto) {
+                if alpns::SIDUCK.contains(&app_proto) {
                     info!("app proto is siduck");
                     client.siduck_conn = Some(SiDuckConn::new());
 
                     client.app_proto_selected = true;
+                } else {
+                    unreachable!("app proto is not siduck")
                 }
 
                 // Update max_datagram_size after connection established.
@@ -501,7 +467,12 @@ fn main() {
                 }
 
                 if si_conn
-                    .quic_to_tcp(conn, &mut buf, tcp_stream.as_mut().unwrap())
+                    .quic_to_tcp(
+                        conn,
+                        &mut buf,
+                        tcp_stream.as_mut().unwrap(),
+                        conn_args.dgrams_enabled,
+                    )
                     .is_err()
                 {
                     continue 'read;

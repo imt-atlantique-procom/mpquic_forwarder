@@ -48,8 +48,6 @@ pub struct CommonArgs {
     pub cc_algorithm: String,
     pub disable_hystart: bool,
     pub dgrams_enabled: bool,
-    pub dgram_count: u64,
-    pub dgram_data: String,
     pub max_active_cids: u64,
     pub enable_active_migration: bool,
     pub max_field_section_size: Option<u64>,
@@ -74,14 +72,13 @@ pub struct CommonArgs {
 /// --cc-algorithm NAME         Set a congestion control algorithm.
 /// --disable-hystart           Disable HyStart++.
 /// --dgram-proto PROTO         DATAGRAM application protocol.
-/// --dgram-count COUNT         Number of DATAGRAMs to send.
-/// --dgram-data DATA           DATAGRAM data to send.
 /// --max-active-cids NUM       Maximum number of active Connection IDs.
 /// --enable-active-migration   Enable active connection migration.
 /// --max-field-section-size BYTES  Max size of uncompressed field section.
 /// --qpack-max-table-capacity BYTES  Max capacity of dynamic QPACK decoding.
 /// --qpack-blocked-streams STREAMS  Limit of blocked streams while decoding.
 /// --multipath                 Enable multipath support.
+/// --dgram                     Do forwarding via QUIC datagrams.
 ///
 /// [`Docopt`]: https://docs.rs/docopt/1.1.0/docopt/
 impl Args for CommonArgs {
@@ -112,10 +109,8 @@ impl Args for CommonArgs {
             (..) => panic!("Unsupported HTTP version and DATAGRAM protocol."),
         };
 
-        let dgram_count = args.get_str("--dgram-count");
-        let dgram_count = dgram_count.parse::<u64>().unwrap();
-
-        let dgram_data = args.get_str("--dgram-data").to_string();
+        let dgram = args.get_bool("--dgram");
+        let dgrams_enabled = dgram;
 
         let max_data = args.get_str("--max-data");
         let max_data = max_data.parse::<u64>().unwrap();
@@ -204,8 +199,6 @@ impl Args for CommonArgs {
             cc_algorithm: cc_algorithm.to_string(),
             disable_hystart,
             dgrams_enabled,
-            dgram_count,
-            dgram_data,
             max_active_cids,
             enable_active_migration,
             max_field_section_size,
@@ -233,8 +226,6 @@ impl Default for CommonArgs {
             cc_algorithm: "cubic".to_string(),
             disable_hystart: false,
             dgrams_enabled: false,
-            dgram_count: 0,
-            dgram_data: "quack".to_string(),
             max_active_cids: 2,
             enable_active_migration: false,
             max_field_section_size: None,
@@ -263,10 +254,7 @@ Options:
   --http-version VERSION   HTTP version to use [default: all].
   --early-data             Enable sending early data.
   --dgram-proto PROTO      DATAGRAM application protocol to use [default: none].
-  --dgram-count COUNT      Number of DATAGRAMs to send [default: 0].
-  --dgram-data DATA        Data to send for certain types of DATAGRAM application protocol [default: quack].
   --dump-packets PATH      Dump the incoming packets as files in the given directory.
-  --dump-responses PATH    Dump response payload as files in the given directory.
   --dump-json              Dump response headers and payload to stdout in JSON format.
   --max-json-payload BYTES  Per-response payload limit when dumping JSON [default: 10000].
   --connect-to ADDRESS     Override ther server's address.
@@ -278,6 +266,7 @@ Options:
   --enable-active-migration   Enable active connection migration.
   --perform-migration      Perform connection migration on another source port.
   --multipath              Enable multipath support.
+  --dgram                  Do forwarding via QUIC datagrams.
   -A --address ADDR ...    Additional client addresses to use.
   -H --header HEADER ...   Add a request header.
   -n --requests REQUESTS   Send the given number of identical requests [default: 1].
@@ -293,7 +282,6 @@ Options:
 /// Application-specific arguments that compliment the `CommonArgs`.
 pub struct ClientArgs {
     pub version: u32,
-    pub dump_response_path: Option<String>,
     pub dump_json: Option<usize>,
     pub urls: Vec<url::Url>,
     pub reqs_cardinal: u64,
@@ -315,12 +303,6 @@ impl Args for ClientArgs {
 
         let version = args.get_str("--wire-version");
         let version = u32::from_str_radix(version, 16).unwrap();
-
-        let dump_response_path = if args.get_str("--dump-responses") != "" {
-            Some(args.get_str("--dump-responses").to_string())
-        } else {
-            None
-        };
 
         let dump_json = args.get_bool("--dump-json");
         let dump_json = if dump_json {
@@ -385,7 +367,6 @@ impl Args for ClientArgs {
 
         ClientArgs {
             version,
-            dump_response_path,
             dump_json,
             urls,
             reqs_cardinal,
@@ -407,7 +388,6 @@ impl Default for ClientArgs {
     fn default() -> Self {
         ClientArgs {
             version: 0xbabababa,
-            dump_response_path: None,
             dump_json: None,
             urls: vec![],
             req_headers: vec![],
@@ -449,8 +429,6 @@ Options:
   --no-grease                 Don't send GREASE.
   --http-version VERSION      HTTP version to use [default: all].
   --dgram-proto PROTO         DATAGRAM application protocol to use [default: none].
-  --dgram-count COUNT         Number of DATAGRAMs to send [default: 0].
-  --dgram-data DATA           Data to send for certain types of DATAGRAM application protocol [default: brrr].
   --cc-algorithm NAME         Specify which congestion control algorithm to use [default: cubic].
   --disable-hystart           Disable HyStart++.
   --max-active-cids NUM       The maximum number of active Connection IDs we can support [default: 2].
@@ -460,6 +438,7 @@ Options:
   --qpack-blocked-streams STREAMS   Limit of streams that can be blocked while decoding. Any value other that 0 is currently unsupported.
   --disable-gso               Disable GSO (linux only).
   --multipath                 Enable multipath support.
+  --dgram                     Do forwarding via QUIC datagrams.
   -h --help                   Show this screen.
 ";
 

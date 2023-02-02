@@ -125,7 +125,6 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     config
         .set_application_protos(&alpns::SIDUCK.to_vec())
         .unwrap();
-    config.enable_dgram(true, 1000, 1000);
 
     config.set_max_idle_timeout(conn_args.idle_timeout);
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
@@ -171,6 +170,10 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
 
     if conn_args.disable_hystart {
         config.enable_hystart(false);
+    }
+
+    if conn_args.dgrams_enabled {
+        config.enable_dgram(true, 1000, 1000);
     }
 
     let mut app_proto_selected = false;
@@ -341,41 +344,43 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                 if n > 0 {
                     info!("Received tcp packet with size {}", n);
 
-                    // avoid BufferTooShortError
-                    // TODO implement method to send larger datagrams (with len prepended)
-                    // let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
+                    if conn_args.dgrams_enabled {
+                        // avoid BufferTooShortError
+                        // TODO implement method to send larger datagrams (with len prepended)
+                        let min = cmp::min(n, conn.dgram_max_writable_len().unwrap());
 
-                    // info!(
-                    //     "Sending QUIC DATAGRAM with size {} (original size {})",
-                    //     min, n
-                    // );
+                        info!(
+                            "Sending QUIC DATAGRAM with size {} (original size {})",
+                            min, n
+                        );
 
-                    // match conn.dgram_send(&buf_tcp[..min]) {
-                    //     Ok(v) => v,
+                        match conn.dgram_send(&buf_tcp[..min]) {
+                            Ok(v) => v,
 
-                    //     Err(e) => {
-                    //         error!("failed to send dgram {:?}", e);
+                            Err(e) => {
+                                error!("failed to send dgram {:?}", e);
 
-                    //         break;
-                    //     }
-                    // }
-
-                    // Avoid creating more than one quic packet
-                    // TODO implement method to send larger packets (with len prepended)
-                    let min = cmp::min(n, conn.max_send_udp_payload_size());
-                    let min = cmp::min(min, 16337); // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
-                    match conn.stream_send(0, &buf_tcp[..min], false) {
-                        Ok(sent) => {
-                            info!(
-                                "Sent QUIC stream with size {} (original size {}, {})",
-                                sent, min, n
-                            );
+                                break;
+                            }
                         }
+                    } else {
+                        // Avoid creating more than one quic packet
+                        // TODO implement method to send larger packets (with len prepended)
+                        let min = cmp::min(n, conn.max_send_udp_payload_size());
+                        let min = cmp::min(min, 16337); // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
+                        match conn.stream_send(0, &buf_tcp[..min], false) {
+                            Ok(sent) => {
+                                info!(
+                                    "Sent QUIC stream with size {} (original size {}, {})",
+                                    sent, min, n
+                                );
+                            }
 
-                        Err(e) => {
-                            error!("failed to send dgram {:?}", e);
+                            Err(e) => {
+                                error!("failed to send dgram {:?}", e);
 
-                            break;
+                                break;
+                            }
                         }
                     }
                 }

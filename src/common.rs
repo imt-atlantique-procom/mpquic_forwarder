@@ -361,45 +361,48 @@ impl SiDuckConn {
         conn: &mut quiche::Connection,
         buf: &mut [u8],
         tcp_stream: &mut TcpStream,
+        use_dgram: bool,
     ) -> quiche::h3::Result<()> {
-        // match conn.dgram_recv(buf) {
-        //     Ok(len) => {
-        //         info!("Received DATAGRAM with len {}", len);
+        if use_dgram {
+            match conn.dgram_recv(buf) {
+                Ok(len) => {
+                    info!("Received DATAGRAM with len {}", len);
 
-        //         match tcp_stream.write(&buf[..len]) {
-        //             Ok(_) => (),
+                    match tcp_stream.write(&buf[..len]) {
+                        Ok(_) => (),
 
-        //             Err(e) => {
-        //                 error!("failure sending TCP failure {:?}", e);
-        //                 // TODO return error
-        //                 // return Err(From::from("asd"));
-        //             }
-        //         }
-        //     }
+                        Err(e) => {
+                            error!("failure sending TCP failure {:?}", e);
+                            // TODO return error
+                            // return Err(From::from("asd"));
+                        }
+                    }
+                }
 
-        //     Err(quiche::Error::Done) => (),
-
-        //     Err(e) => {
-        //         error!("failure receiving DATAGRAM failure {:?}", e);
-
-        //         return Err(From::from(e));
-        //     }
-        // }
-
-        // Stream is readable, read until there's no more data.
-        let stream_id = 0;
-        while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
-            info!("Received bytes on stream {} with len {}", stream_id, read);
-
-            match tcp_stream.write(&buf[..read]) {
-                Ok(_) => (),
+                Err(quiche::Error::Done) => (),
 
                 Err(e) => {
-                    error!("failure sending TCP failure {:?}", e);
+                    error!("failure receiving DATAGRAM failure {:?}", e);
 
-                    // TODO return error
-                    // return Err(From::from(e));
-                    break;
+                    return Err(From::from(e));
+                }
+            }
+        } else {
+            // Stream is readable, read until there's no more data.
+            let stream_id = 0;
+            while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
+                info!("Received bytes on stream {} with len {}", stream_id, read);
+
+                match tcp_stream.write(&buf[..read]) {
+                    Ok(_) => (),
+
+                    Err(e) => {
+                        error!("failure sending TCP failure {:?}", e);
+
+                        // TODO return error
+                        // return Err(From::from(e));
+                        break;
+                    }
                 }
             }
         }
