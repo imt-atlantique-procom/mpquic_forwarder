@@ -513,7 +513,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
         }
 
         // Determine in which order we are going to iterate over paths.
-        let scheduled_tuples = random_scheduler(&conn);
+        let scheduled_tuples = round_robin_scheduler(&conn);
 
         // Generate outgoing QUIC packets and send them on the UDP socket, until
         // quiche reports that there are no more packets to be sent.
@@ -597,4 +597,15 @@ fn random_scheduler(
     let mut paths = conn.path_stats().collect::<Vec<quiche::PathStats>>();
     paths.shuffle(&mut thread_rng());
     paths.into_iter().map(|p| (p.local_addr, p.peer_addr))
+}
+
+/// Generate a ordered list of 4-tuples on which the host should send packets,
+/// following a round robin scheduling.
+fn round_robin_scheduler(
+    conn: &quiche::Connection,
+) -> impl Iterator<Item = (std::net::SocketAddr, std::net::SocketAddr)> {
+    use itertools::Itertools;
+    conn.path_stats()
+        .sorted_by_key(|p| p.local_addr)
+        .map(|p| (p.local_addr, p.peer_addr))
 }
