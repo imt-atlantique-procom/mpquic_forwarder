@@ -58,6 +58,12 @@ pub fn stdout_sink(out: String) {
 
 const H3_MESSAGE_ERROR: u64 = 0x10E;
 
+// Fragmentation
+pub const FRAGMENTATION_HEADER_SIZE: usize = 1;
+pub const FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET: usize = 0;
+pub const FRAGMENTATION_HEADER_IS_FRAGMENT_FALSE: u8 = 0;
+pub const FRAGMENTATION_HEADER_IS_FRAGMENT_TRUE: u8 = 1;
+
 /// ALPN helpers.
 ///
 /// This module contains constants and functions for working with ALPN.
@@ -349,11 +355,17 @@ pub trait HttpConn {
     );
 }
 
-pub struct SiDuckConn {}
+pub struct SiDuckConn {
+    fragment_offset: usize,
+    fragment_buf: [u8; 65536],
+}
 
 impl SiDuckConn {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            fragment_offset: 0,
+            fragment_buf: [0; 65536],
+        }
     }
 
     pub fn quic_to_tcp(
@@ -393,15 +405,27 @@ impl SiDuckConn {
             while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
                 info!("Received bytes on stream {} with len {}", stream_id, read);
 
-                match tcp_stream.write(&buf[..read]) {
-                    Ok(_) => (),
+                let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
+                self.fragment_buf[self.fragment_offset..self.fragment_offset + read_without_header]
+                    .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
+                self.fragment_offset += read_without_header;
 
-                    Err(e) => {
-                        error!("failure sending TCP failure {:?}", e);
+                if buf[FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET]
+                    == FRAGMENTATION_HEADER_IS_FRAGMENT_FALSE
+                {
+                    match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
+                        Ok(_) => {
+                            info!("Sent bytes to tcp with len {}", self.fragment_offset);
+                            self.fragment_offset = 0;
+                        }
 
-                        // TODO return error
-                        // return Err(From::from(e));
-                        break;
+                        Err(e) => {
+                            error!("failure sending TCP failure {:?}", e);
+
+                            // TODO return error
+                            // return Err(From::from(e));
+                            break;
+                        }
                     }
                 }
             }

@@ -431,31 +431,6 @@ fn main() {
                 client.max_datagram_size = client.conn.max_send_udp_payload_size();
             }
 
-            if client.http_conn.is_some() {
-                let conn = &mut client.conn;
-                let http_conn = client.http_conn.as_mut().unwrap();
-                let partial_responses = &mut client.partial_responses;
-
-                // Handle writable streams.
-                for stream_id in conn.writable() {
-                    http_conn.handle_writable(conn, partial_responses, stream_id);
-                }
-
-                if http_conn
-                    .handle_requests(
-                        conn,
-                        &mut client.partial_requests,
-                        partial_responses,
-                        &args.root,
-                        &args.index,
-                        &mut buf,
-                    )
-                    .is_err()
-                {
-                    continue 'read;
-                }
-            }
-
             // If we have a siduck connection, handle the quacks.
             if client.siduck_conn.is_some() {
                 let conn = &mut client.conn;

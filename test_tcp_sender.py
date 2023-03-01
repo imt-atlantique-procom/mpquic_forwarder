@@ -5,8 +5,7 @@ import time
 
 DEST_IP = "127.0.0.1"
 DEST_PORT = 1111
-# TODO fails when is bigger than 16339 for datagram and 16337 for stream
-MSG_LEN = 16340
+MSG_LEN = 4
 TIME_BETWEEN_MSG = 2 # seconds
 
 def send_msg(sock, msg):

@@ -43,6 +43,7 @@ use slab::Slab;
 
 const MAX_BUF_SIZE: usize = 65536;
 const MAX_DATAGRAM_SIZE: usize = 65536;
+const MAX_PAYLOAD_FOR_QUICHE: usize = 16337 - FRAGMENTATION_HEADER_SIZE; // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
 
 const LISTEN_PORT: &str = "1111";
 
@@ -267,6 +268,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     let mut listener = TcpListener::bind(listen_addr.parse().unwrap()).unwrap();
     let mut tcp_stream: Option<TcpStream> = None;
     let mut buf_tcp = [0; MAX_BUF_SIZE];
+    let mut buf_quic = [0; MAX_BUF_SIZE + 1];
 
     loop {
         if !conn.is_in_early_data() || app_proto_selected {
@@ -370,21 +372,38 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                         }
                     } else {
                         // Avoid creating more than one quic packet
-                        // TODO implement method to send larger packets (with len prepended)
-                        let min = cmp::min(n, conn.max_send_udp_payload_size());
-                        let min = cmp::min(min, 16337); // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
-                        match conn.stream_send(0, &buf_tcp[..min], false) {
-                            Ok(sent) => {
-                                info!(
-                                    "Sent QUIC stream with size {} (original size {}, {})",
-                                    sent, min, n
-                                );
-                            }
+                        let max_possible_len =
+                            cmp::min(conn.max_send_udp_payload_size(), MAX_PAYLOAD_FOR_QUICHE);
+                        let mut sent = 0;
+                        while sent < n {
+                            let pending = n - sent;
+                            let is_fragment = pending > max_possible_len; // if there is more to send than the max possible amount
+                            info!("is fragment {}", is_fragment);
+                            let amount_to_send_now = cmp::min(pending, max_possible_len);
 
-                            Err(e) => {
-                                error!("failed to send dgram {:?}", e);
+                            buf_quic[FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET] = is_fragment as u8; // add header
+                            buf_quic[FRAGMENTATION_HEADER_SIZE
+                                ..FRAGMENTATION_HEADER_SIZE + amount_to_send_now]
+                                .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]); // copy payload
 
-                                break;
+                            match conn.stream_send(
+                                0,
+                                &buf_quic[..amount_to_send_now + FRAGMENTATION_HEADER_SIZE],
+                                false,
+                            ) {
+                                Ok(sent_now) => {
+                                    info!(
+                                        "Sent QUIC stream with size {} (full size {})",
+                                        sent_now, n
+                                    );
+                                    sent += sent_now - FRAGMENTATION_HEADER_SIZE;
+                                }
+
+                                Err(e) => {
+                                    error!("failed to send dgram {:?}", e);
+
+                                    break;
+                                }
                             }
                         }
                     }
