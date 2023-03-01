@@ -27,8 +27,6 @@ mio = { version = "0.8", features = ["net", "os-poll"] }
 url = "1"
 log = "0.4"
 ring = "0.16"
-# quiche = { path = "../quiche/quiche" }
-# quiche = { git = "https://github.com/cloudflare/quiche" }
 quiche = { git = "https://github.com/qdeconinck/quiche", branch = "multipath"}
 libc = "0.2"
 nix = "0"
