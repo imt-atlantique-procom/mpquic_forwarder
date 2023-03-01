@@ -27,7 +27,7 @@ mio = { version = "0.8", features = ["net", "os-poll"] }
 url = "1"
 log = "0.4"
 ring = "0.16"
-quiche = { git = "https://github.com/qdeconinck/quiche", branch = "multipath"}
+quiche = { git = "https://github.com/qdeconinck/quiche", rev = "9350e38"}
 libc = "0.2"
 nix = "0"
 slab = "0.4"
