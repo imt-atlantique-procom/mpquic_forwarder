@@ -441,13 +441,16 @@ impl SiDuckConn {
                             MAX_BUF_SIZE as u64,
                         ); // hack
                     } else {
-                        let min = cmp::min(self.fragment_offset + read, MAX_BUF_SIZE - 1); // hack
-                        self.fragment_buf[self.fragment_offset..min].clone_from_slice(&buf[..read]);
-
-                        self.fragment_offset = min;
+                        if self.fragment_offset + read < MAX_BUF_SIZE - 1 {
+                            self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
+                                .clone_from_slice(&buf[..read]);
+                            self.fragment_offset += read;
+                        } else {
+                            self.fragment_offset = usize::try_from(self.packet_length).unwrap();
+                        }
                     }
 
-                    if self.fragment_offset >= usize::try_from(self.packet_length).unwrap() {
+                    if self.fragment_offset >= usize::try_from(self.packet_length).unwrap() - 1 {
                         match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
                             Ok(_) => {
                                 info!("Sent bytes to tcp with len {}", self.fragment_offset);
