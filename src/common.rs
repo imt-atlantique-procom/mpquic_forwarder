@@ -362,7 +362,7 @@ pub struct SiDuckConn {
     // TODO fragment_offset and packet_length should have the same type
     fragment_offset: usize,
     fragment_buf: [u8; MAX_BUF_SIZE],
-    packet_length: u64,
+    packet_length: usize,
 }
 
 impl SiDuckConn {
@@ -408,13 +408,13 @@ impl SiDuckConn {
         } else {
             // Stream is readable, read until there's no more data.
             let stream_id = 0;
-            while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
+            while let Ok((mut read, _fin)) = conn.stream_recv(stream_id, buf) {
                 info!("Received bytes on stream {} with len {}", stream_id, read);
 
                 if !self.fragmentation_enabled {
                     match tcp_stream.write(&buf[..read]) {
                         Ok(_) => {
-                            info!("Sent bytes to tcp with len {}", read);
+                            info!("Sent bytes to tcp with len {} {}", read, _fin);
                         }
 
                         Err(e) => {
@@ -426,43 +426,71 @@ impl SiDuckConn {
                     }
                 } else {
                     // TODO fragmentation is not working
-                    // first packet
-                    if self.fragment_offset == 0 {
-                        let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
-                        self.fragment_buf
-                            [self.fragment_offset..self.fragment_offset + read_without_header]
-                            .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
-                        self.fragment_offset += read_without_header;
-                        // TODO check endianess
-                        self.packet_length = cmp::min(
-                            u64::from_ne_bytes(
+                    loop {
+                        let mut pending = read;
+                        if self.fragment_offset == 0 {
+                            let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
+                            // TODO check endianess
+                            self.packet_length = u64::from_ne_bytes(
                                 buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
-                            ),
-                            MAX_BUF_SIZE as u64,
-                        ); // hack
-                    } else {
-                        if self.fragment_offset + read < MAX_BUF_SIZE - 1 {
-                            self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
-                                .clone_from_slice(&buf[..read]);
-                            self.fragment_offset += read;
+                            ) as usize;
+
+                            if read_without_header <= self.packet_length {
+                                self.fragment_buf[..read_without_header]
+                                    .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
+                                self.fragment_offset += read_without_header;
+                            } else {
+                                // there are coalesced packets
+                                pending = self.packet_length + FRAGMENTATION_HEADER_SIZE;
+                                self.fragment_buf[..self.packet_length]
+                                    .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..pending]);
+                                self.fragment_offset = self.packet_length;
+                            }
                         } else {
-                            self.fragment_offset = usize::try_from(self.packet_length).unwrap() - 1;
+                            if self.fragment_offset + read <= self.packet_length {
+                                self.fragment_buf
+                                    [self.fragment_offset..self.fragment_offset + read]
+                                    .clone_from_slice(&buf[..read]);
+                                self.fragment_offset += read;
+                            } else {
+                                // there are coalesced packets
+                                pending = self.packet_length - self.fragment_offset;
+                                self.fragment_buf
+                                    [self.fragment_offset..self.fragment_offset + pending]
+                                    .clone_from_slice(&buf[..pending]);
+                                self.fragment_offset = self.packet_length;
+                            }
                         }
-                    }
 
-                    if self.fragment_offset >= usize::try_from(self.packet_length).unwrap() - 1 {
-                        match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
-                            Ok(_) => {
-                                info!("Sent bytes to tcp with len {}", self.fragment_offset);
-                                self.fragment_offset = 0;
+                        if self.fragment_offset == self.packet_length {
+                            match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
+                                Ok(sent) => {
+                                    info!(
+                                        "Sent bytes to tcp with len {} ({})",
+                                        sent, self.fragment_offset
+                                    );
+                                    self.fragment_offset = 0;
+                                    if pending != read {
+                                        let mut temp_buf = [0; MAX_BUF_SIZE];
+                                        temp_buf[..read - pending]
+                                            .clone_from_slice(&buf[pending..read]);
+                                        buf[..read - pending]
+                                            .clone_from_slice(&temp_buf[..read - pending]);
+                                        read = read - pending;
+                                    } else {
+                                        break;
+                                    }
+                                }
+
+                                Err(e) => {
+                                    error!("failure sending TCP failure {:?}", e);
+
+                                    // TODO return error
+                                    break;
+                                }
                             }
-
-                            Err(e) => {
-                                error!("failure sending TCP failure {:?}", e);
-
-                                // TODO return error
-                                break;
-                            }
+                        } else {
+                            break;
                         }
                     }
                 }
