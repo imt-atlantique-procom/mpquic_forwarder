@@ -10,6 +10,15 @@ pub fn lowest_latency_scheduler(
         .map(|p| (p.local_addr, p.peer_addr))
 }
 
+pub fn lowest_lost_scheduler(
+    conn: &quiche::Connection,
+) -> impl Iterator<Item = (std::net::SocketAddr, std::net::SocketAddr)> {
+    use itertools::Itertools;
+    conn.path_stats()
+        .sorted_by_key(|p| p.lost)
+        .map(|p| (p.local_addr, p.peer_addr))
+}
+
 /// Generate a ordered list of 4-tuples on which the host should send packets,
 /// following a random scheduling.
 pub fn random_scheduler(
