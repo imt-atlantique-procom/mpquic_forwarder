@@ -357,6 +357,7 @@ pub trait HttpConn {
 }
 
 pub struct SiDuckConn {
+    fragmentation_enabled: bool,
     // TODO fragment_offset and packet_length should have the same type
     fragment_offset: usize,
     fragment_buf: [u8; MAX_BUF_SIZE],
@@ -366,6 +367,7 @@ pub struct SiDuckConn {
 impl SiDuckConn {
     pub fn new() -> Self {
         Self {
+            fragmentation_enabled: false,
             fragment_offset: 0,
             fragment_buf: [0; MAX_BUF_SIZE],
             packet_length: 0,
@@ -408,27 +410,10 @@ impl SiDuckConn {
             while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
                 info!("Received bytes on stream {} with len {}", stream_id, read);
 
-                // first packet
-                if self.fragment_offset == 0 {
-                    let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
-                    self.fragment_buf
-                        [self.fragment_offset..self.fragment_offset + read_without_header]
-                        .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
-                    self.fragment_offset += read_without_header;
-                    // TODO check endianess
-                    self.packet_length =
-                        u64::from_ne_bytes(buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap());
-                } else {
-                    self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
-                        .clone_from_slice(&buf[..read]);
-                    self.fragment_offset += read;
-                }
-
-                if self.fragment_offset == usize::try_from(self.packet_length).unwrap() {
-                    match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
+                if !self.fragmentation_enabled {
+                    match tcp_stream.write(&buf[..read]) {
                         Ok(_) => {
-                            info!("Sent bytes to tcp with len {}", self.fragment_offset);
-                            self.fragment_offset = 0;
+                            info!("Sent bytes to tcp with len {}", read);
                         }
 
                         Err(e) => {
@@ -436,6 +421,40 @@ impl SiDuckConn {
 
                             // TODO return error
                             break;
+                        }
+                    }
+                } else {
+                    // TODO fragmentation is not working
+                    // first packet
+                    if self.fragment_offset == 0 {
+                        let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
+                        self.fragment_buf
+                            [self.fragment_offset..self.fragment_offset + read_without_header]
+                            .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
+                        self.fragment_offset += read_without_header;
+                        // TODO check endianess
+                        self.packet_length = u64::from_ne_bytes(
+                            buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
+                        );
+                    } else {
+                        self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
+                            .clone_from_slice(&buf[..read]);
+                        self.fragment_offset += read;
+                    }
+
+                    if self.fragment_offset == usize::try_from(self.packet_length).unwrap() {
+                        match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
+                            Ok(_) => {
+                                info!("Sent bytes to tcp with len {}", self.fragment_offset);
+                                self.fragment_offset = 0;
+                            }
+
+                            Err(e) => {
+                                error!("failure sending TCP failure {:?}", e);
+
+                                // TODO return error
+                                break;
+                            }
                         }
                     }
                 }

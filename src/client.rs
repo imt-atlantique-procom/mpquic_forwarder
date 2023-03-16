@@ -42,7 +42,9 @@ use ring::rand::*;
 use slab::Slab;
 
 const MAX_DATAGRAM_SIZE: usize = 65536;
-const MAX_PAYLOAD_FOR_QUICHE: usize = 16337 - FRAGMENTATION_HEADER_SIZE; // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
+const MAX_PAYLOAD_FOR_QUICHE: usize = 16337;
+const MAX_PAYLOAD_FOR_QUICHE_WITH_HEADER: usize =
+    MAX_PAYLOAD_FOR_QUICHE - FRAGMENTATION_HEADER_SIZE; // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
 
 const LISTEN_PORT: &str = "1111";
 
@@ -269,6 +271,8 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     let mut buf_tcp = [0; MAX_BUF_SIZE];
     let mut buf_quic = [0; MAX_BUF_SIZE + 1];
 
+    let fragmentation_enabled = false;
+
     loop {
         if !conn.is_in_early_data() || app_proto_selected {
             poll.poll(&mut events, conn.timeout()).unwrap();
@@ -371,48 +375,74 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                             }
                         }
                     } else {
-                        // Avoid creating more than one quic packet
-                        let max_possible_len =
-                            cmp::min(conn.max_send_udp_payload_size(), MAX_PAYLOAD_FOR_QUICHE);
-                        let mut sent = 0;
-                        while sent < n {
-                            let pending = n - sent;
-
-                            let mut amount_to_send_now = cmp::min(pending, max_possible_len);
-
-                            if sent == 0 {
-                                // add header to the first packet
-                                buf_quic[..FRAGMENTATION_HEADER_SIZE]
-                                    .clone_from_slice(&(n as u64).to_ne_bytes());
-                                // copy payload
-                                buf_quic[FRAGMENTATION_HEADER_SIZE
-                                    ..FRAGMENTATION_HEADER_SIZE + amount_to_send_now]
-                                    .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]);
-                                amount_to_send_now = FRAGMENTATION_HEADER_SIZE + amount_to_send_now;
-                            } else {
-                                // copy payload
-                                buf_quic[..amount_to_send_now]
-                                    .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]);
-                            }
-
-                            match conn.stream_send(0, &buf_quic[..amount_to_send_now], false) {
-                                Ok(sent_now) => {
+                        if !fragmentation_enabled {
+                            let min = cmp::min(n, conn.max_send_udp_payload_size());
+                            let min = cmp::min(min, MAX_PAYLOAD_FOR_QUICHE); // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
+                            match conn.stream_send(0, &buf_tcp[..min], false) {
+                                Ok(sent) => {
                                     info!(
-                                        "Sent QUIC stream with size {} (full size {})",
-                                        sent_now, n
+                                        "Sent QUIC stream with size {} (original size {}, {})",
+                                        sent, min, n
                                     );
-
-                                    if sent == 0 {
-                                        sent += sent_now - FRAGMENTATION_HEADER_SIZE;
-                                    } else {
-                                        sent += sent_now;
-                                    }
                                 }
 
                                 Err(e) => {
                                     error!("failed to send dgram {:?}", e);
 
                                     break;
+                                }
+                            }
+                        } else {
+                            // TODO fragmentation is not working
+                            // Avoid creating more than one quic packet
+                            let max_possible_len = cmp::min(
+                                conn.max_send_udp_payload_size(),
+                                MAX_PAYLOAD_FOR_QUICHE_WITH_HEADER,
+                            );
+                            let mut sent = 0;
+                            while sent < n {
+                                let pending = n - sent;
+
+                                let mut amount_to_send_now = cmp::min(pending, max_possible_len);
+
+                                if sent == 0 {
+                                    // add header to the first packet
+                                    buf_quic[..FRAGMENTATION_HEADER_SIZE]
+                                        .clone_from_slice(&(n as u64).to_ne_bytes());
+                                    // copy payload
+                                    buf_quic[FRAGMENTATION_HEADER_SIZE
+                                        ..FRAGMENTATION_HEADER_SIZE + amount_to_send_now]
+                                        .clone_from_slice(
+                                            &buf_tcp[sent..sent + amount_to_send_now],
+                                        );
+                                    amount_to_send_now =
+                                        FRAGMENTATION_HEADER_SIZE + amount_to_send_now;
+                                } else {
+                                    // copy payload
+                                    buf_quic[..amount_to_send_now].clone_from_slice(
+                                        &buf_tcp[sent..sent + amount_to_send_now],
+                                    );
+                                }
+
+                                match conn.stream_send(0, &buf_quic[..amount_to_send_now], false) {
+                                    Ok(sent_now) => {
+                                        info!(
+                                            "Sent QUIC stream with size {} (full size {})",
+                                            sent_now, n
+                                        );
+
+                                        if sent == 0 {
+                                            sent += sent_now - FRAGMENTATION_HEADER_SIZE;
+                                        } else {
+                                            sent += sent_now;
+                                        }
+                                    }
+
+                                    Err(e) => {
+                                        error!("failed to send dgram {:?}", e);
+
+                                        break;
+                                    }
                                 }
                             }
                         }
