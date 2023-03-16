@@ -9,12 +9,15 @@ serversocket.bind((BIND_IP, BIND_PORT))
 # become a server socket
 serversocket.listen(5)
 
-print("Listening on %s:%s" % (BIND_IP, BIND_PORT))
-
-(clientsocket, address) = serversocket.accept()
-print("Connected from ", address)
-
 while True:
-    data = clientsocket.recv(BUFFER_SIZE)
-    if len(data) > 0:
-        print("received message: %d, %s" % (len(data), data))
+    print("Listening on %s:%s" % (BIND_IP, BIND_PORT))
+
+    (clientsocket, address) = serversocket.accept()
+    print("Connected from ", address)
+
+    while True:
+        data = clientsocket.recv(BUFFER_SIZE)
+        if len(data) > 0:
+            print("received message: %d, %s" % (len(data), data))
+        else:
+            break
