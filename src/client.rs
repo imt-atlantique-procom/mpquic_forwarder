@@ -271,7 +271,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
     let mut buf_tcp = [0; MAX_BUF_SIZE];
     let mut buf_quic = [0; MAX_BUF_SIZE + 1];
 
-    let fragmentation_enabled = false;
+    let fragmentation_enabled = true;
 
     loop {
         if !conn.is_in_early_data() || app_proto_selected {

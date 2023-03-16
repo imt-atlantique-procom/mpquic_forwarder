@@ -29,6 +29,7 @@
 //! This module provides some utility functions that are common to quiche
 //! applications.
 
+use std::cmp;
 use std::convert::TryInto;
 use std::io::prelude::*;
 
@@ -367,7 +368,7 @@ pub struct SiDuckConn {
 impl SiDuckConn {
     pub fn new() -> Self {
         Self {
-            fragmentation_enabled: false,
+            fragmentation_enabled: true,
             fragment_offset: 0,
             fragment_buf: [0; MAX_BUF_SIZE],
             packet_length: 0,
@@ -437,12 +438,13 @@ impl SiDuckConn {
                             buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
                         );
                     } else {
-                        self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
-                            .clone_from_slice(&buf[..read]);
-                        self.fragment_offset += read;
+                        let min = cmp::min(self.fragment_offset + read, MAX_BUF_SIZE - 1); // hack
+                        self.fragment_buf[self.fragment_offset..min].clone_from_slice(&buf[..read]);
+
+                        self.fragment_offset = min;
                     }
 
-                    if self.fragment_offset == usize::try_from(self.packet_length).unwrap() {
+                    if self.fragment_offset >= usize::try_from(self.packet_length).unwrap() {
                         match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
                             Ok(_) => {
                                 info!("Sent bytes to tcp with len {}", self.fragment_offset);
