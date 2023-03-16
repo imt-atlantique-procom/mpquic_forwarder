@@ -378,7 +378,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                         while sent < n {
                             let pending = n - sent;
                             let is_fragment = pending > max_possible_len; // if there is more to send than the max possible amount
-                            info!("is fragment {}", is_fragment);
+                            debug!("is fragment {}", is_fragment);
                             let amount_to_send_now = cmp::min(pending, max_possible_len);
 
                             buf_quic[FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET] = is_fragment as u8; // add header
