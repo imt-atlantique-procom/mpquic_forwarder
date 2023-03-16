@@ -533,7 +533,7 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
         }
 
         // Determine in which order we are going to iterate over paths.
-        let scheduled_tuples = round_robin_scheduler(&conn);
+        let scheduled_tuples = random_scheduler(&conn);
 
         // Generate outgoing QUIC packets and send them on the UDP socket, until
         // quiche reports that there are no more packets to be sent.
