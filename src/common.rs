@@ -446,7 +446,7 @@ impl SiDuckConn {
                                 .clone_from_slice(&buf[..read]);
                             self.fragment_offset += read;
                         } else {
-                            self.fragment_offset = usize::try_from(self.packet_length).unwrap();
+                            self.fragment_offset = usize::try_from(self.packet_length).unwrap() - 1;
                         }
                     }
 
