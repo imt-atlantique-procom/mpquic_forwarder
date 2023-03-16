@@ -1,0 +1,1 @@
+RUST_LOG=info cargo run --bin quiche-client -- https://10.0.0.30:4433 --no-verify --dgram-proto siduck --multipath --address 10.0.10.10:7777 --address 10.0.20.10:7777 --address 10.0.30.10:7777 --address 10.0.40.10:7777 --max-active-cids 4
