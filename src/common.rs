@@ -29,6 +29,7 @@
 //! This module provides some utility functions that are common to quiche
 //! applications.
 
+use std::convert::TryInto;
 use std::io::prelude::*;
 
 use std::collections::HashMap;
@@ -58,11 +59,11 @@ pub fn stdout_sink(out: String) {
 
 const H3_MESSAGE_ERROR: u64 = 0x10E;
 
+pub const MAX_BUF_SIZE: usize = 65536;
+
 // Fragmentation
-pub const FRAGMENTATION_HEADER_SIZE: usize = 1;
-pub const FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET: usize = 0;
-pub const FRAGMENTATION_HEADER_IS_FRAGMENT_FALSE: u8 = 0;
-pub const FRAGMENTATION_HEADER_IS_FRAGMENT_TRUE: u8 = 1;
+pub const FRAGMENTATION_HEADER_SIZE: usize = 8; // bytes
+pub const FRAGMENTATION_HEADER_LENGTH_OFFSET: usize = 0;
 
 /// ALPN helpers.
 ///
@@ -356,15 +357,18 @@ pub trait HttpConn {
 }
 
 pub struct SiDuckConn {
+    // TODO fragment_offset and packet_length should have the same type
     fragment_offset: usize,
-    fragment_buf: [u8; 65536],
+    fragment_buf: [u8; MAX_BUF_SIZE],
+    packet_length: u64,
 }
 
 impl SiDuckConn {
     pub fn new() -> Self {
         Self {
             fragment_offset: 0,
-            fragment_buf: [0; 65536],
+            fragment_buf: [0; MAX_BUF_SIZE],
+            packet_length: 0,
         }
     }
 
@@ -386,7 +390,6 @@ impl SiDuckConn {
                         Err(e) => {
                             error!("failure sending TCP failure {:?}", e);
                             // TODO return error
-                            // return Err(From::from("asd"));
                         }
                     }
                 }
@@ -405,14 +408,23 @@ impl SiDuckConn {
             while let Ok((read, _fin)) = conn.stream_recv(stream_id, buf) {
                 info!("Received bytes on stream {} with len {}", stream_id, read);
 
-                let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
-                self.fragment_buf[self.fragment_offset..self.fragment_offset + read_without_header]
-                    .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
-                self.fragment_offset += read_without_header;
+                // first packet
+                if self.fragment_offset == 0 {
+                    let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
+                    self.fragment_buf
+                        [self.fragment_offset..self.fragment_offset + read_without_header]
+                        .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
+                    self.fragment_offset += read_without_header;
+                    // TODO check endianess
+                    self.packet_length =
+                        u64::from_ne_bytes(buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap());
+                } else {
+                    self.fragment_buf[self.fragment_offset..self.fragment_offset + read]
+                        .clone_from_slice(&buf[..read]);
+                    self.fragment_offset += read;
+                }
 
-                if buf[FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET]
-                    == FRAGMENTATION_HEADER_IS_FRAGMENT_FALSE
-                {
+                if self.fragment_offset == usize::try_from(self.packet_length).unwrap() {
                     match tcp_stream.write(&self.fragment_buf[..self.fragment_offset]) {
                         Ok(_) => {
                             info!("Sent bytes to tcp with len {}", self.fragment_offset);
@@ -423,7 +435,6 @@ impl SiDuckConn {
                             error!("failure sending TCP failure {:?}", e);
 
                             // TODO return error
-                            // return Err(From::from(e));
                             break;
                         }
                     }

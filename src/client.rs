@@ -41,7 +41,6 @@ use ring::rand::*;
 
 use slab::Slab;
 
-const MAX_BUF_SIZE: usize = 65536;
 const MAX_DATAGRAM_SIZE: usize = 65536;
 const MAX_PAYLOAD_FOR_QUICHE: usize = 16337 - FRAGMENTATION_HEADER_SIZE; // discovered by tests that 16337 is the max size that not generates 2 packets on the stream
 
@@ -346,7 +345,8 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
             } else if token == tcp_receive_token {
                 // TCP packet received
                 // TODO read loop?
-                let n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
+                let mut n = tcp_stream.as_mut().unwrap().read(&mut buf_tcp[..]).unwrap();
+                n = cmp::min(n, MAX_BUF_SIZE);
 
                 if n > 0 {
                     info!("Received tcp packet with size {}", n);
@@ -377,26 +377,36 @@ pub fn connect(args: ClientArgs, conn_args: CommonArgs) -> Result<(), ClientErro
                         let mut sent = 0;
                         while sent < n {
                             let pending = n - sent;
-                            let is_fragment = pending > max_possible_len; // if there is more to send than the max possible amount
-                            debug!("is fragment {}", is_fragment);
-                            let amount_to_send_now = cmp::min(pending, max_possible_len);
 
-                            buf_quic[FRAGMENTATION_HEADER_IS_FRAGMENT_OFFSET] = is_fragment as u8; // add header
-                            buf_quic[FRAGMENTATION_HEADER_SIZE
-                                ..FRAGMENTATION_HEADER_SIZE + amount_to_send_now]
-                                .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]); // copy payload
+                            let mut amount_to_send_now = cmp::min(pending, max_possible_len);
 
-                            match conn.stream_send(
-                                0,
-                                &buf_quic[..amount_to_send_now + FRAGMENTATION_HEADER_SIZE],
-                                false,
-                            ) {
+                            if sent == 0 {
+                                // add header to the first packet
+                                buf_quic[..FRAGMENTATION_HEADER_SIZE]
+                                    .clone_from_slice(&(n as u64).to_ne_bytes());
+                                // copy payload
+                                buf_quic[FRAGMENTATION_HEADER_SIZE
+                                    ..FRAGMENTATION_HEADER_SIZE + amount_to_send_now]
+                                    .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]);
+                                amount_to_send_now = FRAGMENTATION_HEADER_SIZE + amount_to_send_now;
+                            } else {
+                                // copy payload
+                                buf_quic[..amount_to_send_now]
+                                    .clone_from_slice(&buf_tcp[sent..sent + amount_to_send_now]);
+                            }
+
+                            match conn.stream_send(0, &buf_quic[..amount_to_send_now], false) {
                                 Ok(sent_now) => {
                                     info!(
                                         "Sent QUIC stream with size {} (full size {})",
                                         sent_now, n
                                     );
-                                    sent += sent_now - FRAGMENTATION_HEADER_SIZE;
+
+                                    if sent == 0 {
+                                        sent += sent_now - FRAGMENTATION_HEADER_SIZE;
+                                    } else {
+                                        sent += sent_now;
+                                    }
                                 }
 
                                 Err(e) => {
