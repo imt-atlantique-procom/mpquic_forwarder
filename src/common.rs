@@ -434,9 +434,12 @@ impl SiDuckConn {
                             .clone_from_slice(&buf[FRAGMENTATION_HEADER_SIZE..read]);
                         self.fragment_offset += read_without_header;
                         // TODO check endianess
-                        self.packet_length = u64::from_ne_bytes(
-                            buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
-                        );
+                        self.packet_length = cmp::min(
+                            u64::from_ne_bytes(
+                                buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
+                            ),
+                            MAX_BUF_SIZE as u64,
+                        ); // hack
                     } else {
                         let min = cmp::min(self.fragment_offset + read, MAX_BUF_SIZE - 1); // hack
                         self.fragment_buf[self.fragment_offset..min].clone_from_slice(&buf[..read]);
