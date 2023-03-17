@@ -428,12 +428,18 @@ impl SiDuckConn {
                     // TODO fragmentation is not working
                     loop {
                         let mut pending = read;
+                        // first packet
                         if self.fragment_offset == 0 {
                             let read_without_header = read - FRAGMENTATION_HEADER_SIZE;
                             // TODO check endianess
                             self.packet_length = u64::from_ne_bytes(
                                 buf[..FRAGMENTATION_HEADER_SIZE].try_into().unwrap(),
                             ) as usize;
+
+                            if self.packet_length > MAX_BUF_SIZE {
+                                // hack in case of error, go to next packet
+                                break;
+                            }
 
                             if read_without_header <= self.packet_length {
                                 self.fragment_buf[..read_without_header]
